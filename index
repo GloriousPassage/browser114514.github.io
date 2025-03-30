@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <link rel="manifest" href="./manifest.json">
+    <link rel="stylesheet" href="stylesheet.css"> 
+    <a href="google.com">動かない場合はここをタップ</a>
+    <meta charset="utf-8">
+    <title>Progate</title>
+  </head>
+  <body>
+    <h1 class="title">ぶらうざー</h1>
+  </body>
+  <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(registration => {
+      console.log('ServiceWorker registration successful.');
+    }).catch(err => {
+      console.log('ServiceWorker registration failed.');
+    });
+  }
+  </script>
+</html>
