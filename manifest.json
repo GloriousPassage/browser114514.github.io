@@ -3,7 +3,7 @@
   "short_name": "Browser",
   "theme_color": "#0070E1",
   "background_color": "#0070E1",
-  "display": "browser",
+  "display": "minimal-ui",
   "start_url": "./index.html",
   "icons": [
     {
