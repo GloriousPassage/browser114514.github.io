@@ -1,6 +1,6 @@
 {
-  "name": "Browser",
-  "short_name": "Browser",
+  "name": "Tetris",
+  "short_name": "Tetris",
   "theme_color": "#0070E1",
   "background_color": "#0070E1",
   "display": "standalone",
