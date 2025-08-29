@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
+<link rel="manifest" href="./manifest.json">
 <meta charset="UTF-8">
 <title>テトリス</title>
 <style>
@@ -32,6 +33,13 @@
 <p>スマホ操作: 左右スライド＝移動 / 上フリック＝右回転 / 下フリック＝左回転 / 下スライド＝ソフトドロップ / 下タップ長押し＝ハードドロップ</p>
 
 <script>
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').then(registration => {
+      console.log('ServiceWorker registration successful.');
+    }).catch(err => {
+      console.log('ServiceWorker registration failed.');
+    });
+  }
 const COLS = 10, ROWS = 20, BLOCK = 24;
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
