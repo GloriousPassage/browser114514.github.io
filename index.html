@@ -1,170 +1,234 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <link rel="manifest" href="./manifest.json">
-  <meta charset="UTF-8">
-  <title>テトリス</title>
-  <style>
-    body { text-align: center; background: #222; color: #fff; }
-    canvas { background: #000; display: block; margin: 10px auto; }
-    .buttons { margin-top: 10px; }
-    button { font-size: 20px; margin: 5px; padding: 10px 20px; }
-  </style>
+<meta charset="UTF-8">
+<title>テトリス</title>
+<style>
+  body { background: #111; color: #fff; text-align: center; font-family: sans-serif; }
+  #game { display: flex; justify-content: center; margin-top: 10px; }
+  canvas { background: #000; margin: 5px; }
+  #info { margin: 10px; }
+  button { font-size: 18px; margin: 5px; padding: 8px 16px; }
+</style>
 </head>
 <body>
-  <h1>テトリス</h1>
-  <canvas id="game" width="200" height="400"></canvas>
+<h1>テトリス</h1>
+<div id="info">
+  <div>スコア: <span id="score">0</span></div>
+</div>
+<div id="game">
+  <canvas id="board" width="240" height="480"></canvas>
   <div>
-    <p>スコア: <span id="score">0</span></p>
-    <p>ネクスト: <span id="next"></span></p>
-    <p>ホールド: <span id="hold"></span></p>
+    <div>ネクスト</div>
+    <canvas id="next" width="100" height="100"></canvas>
+    <div>ホールド</div>
+    <canvas id="hold" width="100" height="100"></canvas>
   </div>
-  <div class="buttons">
-    <button onclick="move(-1)">←</button>
-    <button onclick="move(1)">→</button>
-    <button onclick="rotate()">⟳</button>
-    <button onclick="drop()">↓</button>
-    <button onclick="holdPiece()">Hold</button>
-    <button onclick="togglePause()">Pause</button>
-  </div>
+</div>
+<div>
+  <button onclick="togglePause()">⏸ ポーズ</button>
+  <button onclick="holdPiece()">📥 ホールド</button>
+</div>
+<p>スマホ操作: 左右スライド＝移動 / 上フリック＝右回転 / 下フリック＝左回転 / 下スライド＝ソフトドロップ / 下タップ長押し＝ハードドロップ</p>
 
-  <script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(registration => {
-      console.log('ServiceWorker registration successful.');
-    }).catch(err => {
-      console.log('ServiceWorker registration failed.');
-    });
-    }
-    const canvas = document.getElementById("game");
-    const ctx = canvas.getContext("2d");
-    const ROWS = 20, COLS = 10, BLOCK = 20;
-    const board = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+<script>
+const COLS = 10, ROWS = 20, BLOCK = 24;
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const nextCanvas = document.getElementById("next").getContext("2d");
+const holdCanvas = document.getElementById("hold").getContext("2d");
+ctx.scale(BLOCK/24, BLOCK/24);
 
-    const pieces = [
-      [[1,1,1,1]],
-      [[1,1],[1,1]],
-      [[0,1,0],[1,1,1]],
-      [[1,0,0],[1,1,1]],
-      [[0,0,1],[1,1,1]],
-      [[1,1,0],[0,1,1]],
-      [[0,1,1],[1,1,0]]
-    ];
-    let current, next, hold=null, canHold=true;
-    let x=3, y=0;
-    let score=0, paused=false;
+const COLORS = {
+  I: "#00f0f0", O: "#f0f000", T: "#a000f0",
+  S: "#00f000", Z: "#f00000", J: "#0000f0", L: "#f0a000"
+};
 
-    function newPiece() {
-      if (!next) next = pieces[Math.floor(Math.random()*pieces.length)];
-      current = next;
-      next = pieces[Math.floor(Math.random()*pieces.length)];
-      x=3; y=0;
-      if (collide()) { alert("ゲームオーバー"); location.reload(); }
-      canHold=true;
-    }
+const SHAPES = {
+  I: [[1,1,1,1]],
+  O: [[1,1],[1,1]],
+  T: [[0,1,0],[1,1,1]],
+  S: [[0,1,1],[1,1,0]],
+  Z: [[1,1,0],[0,1,1]],
+  J: [[1,0,0],[1,1,1]],
+  L: [[0,0,1],[1,1,1]]
+};
 
-    function collide(px=x, py=y, shape=current) {
-      return shape.some((row, dy) =>
-        row.some((val, dx) => val &&
-          (board[py+dy] && board[py+dy][px+dx]) !== 0
-        )
-      );
-    }
+let board = Array.from({length: ROWS}, ()=> Array(COLS).fill(""));
+let bag = [], nextPiece, holdPieceData=null, holdUsed=false;
+let piece, score=0, dropInterval=800, dropStart=Date.now(), paused=false;
 
-    function merge() {
-      current.forEach((row, dy) =>
-        row.forEach((val, dx) => {
-          if (val) board[y+dy][x+dx] = val;
-        })
-      );
-    }
+// --- Piece handling ---
+function newBag(){
+  bag = ["I","O","T","S","Z","J","L"].sort(()=>Math.random()-0.5);
+}
+function next(){
+  if(bag.length===0) newBag();
+  return bag.pop();
+}
+function newPiece(){
+  const type = nextPiece || next();
+  nextPiece = next();
+  const shape = SHAPES[type];
+  return {
+    type,
+    shape,
+    x: Math.floor(COLS/2)-Math.ceil(shape[0].length/2),
+    y: 0
+  };
+}
 
-    function clearLines() {
-      for (let r=ROWS-1;r>=0;r--) {
-        if (board[r].every(v=>v)) {
-          board.splice(r,1);
-          board.unshift(Array(COLS).fill(0));
-          score+=100;
-          document.getElementById("score").textContent=score;
-          r++;
-        }
+// --- Drawing ---
+function drawSquare(x,y,color,ctx){
+  ctx.fillStyle=color;
+  ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
+  ctx.strokeStyle="#111";
+  ctx.strokeRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
+}
+function drawBoard(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<ROWS;y++)
+    for(let x=0;x<COLS;x++)
+      if(board[y][x]) drawSquare(x,y,COLORS[board[y][x]],ctx);
+}
+function drawPiece(p, ghost=false){
+  const shape = p.shape;
+  const ghostColor = "rgba(255,255,255,0.3)";
+  for(let y=0;y<shape.length;y++)
+    for(let x=0;x<shape[y].length;x++)
+      if(shape[y][x])
+        drawSquare(p.x+x,p.y+y,ghost?ghostColor:COLORS[p.type],ctx);
+}
+function drawNext(){
+  nextCanvas.clearRect(0,0,100,100);
+  drawMini(SHAPES[nextPiece],COLORS[nextPiece],nextCanvas);
+}
+function drawHold(){
+  holdCanvas.clearRect(0,0,100,100);
+  if(holdPieceData)
+    drawMini(SHAPES[holdPieceData],COLORS[holdPieceData],holdCanvas);
+}
+function drawMini(shape,color,c){
+  for(let y=0;y<shape.length;y++)
+    for(let x=0;x<shape[y].length;x++)
+      if(shape[y][x]){
+        c.fillStyle=color;
+        c.fillRect(x*20,y*20,20,20);
+        c.strokeStyle="#111";
+        c.strokeRect(x*20,y*20,20,20);
       }
-    }
+}
 
-    function draw() {
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-      board.forEach((row,ypos) =>
-        row.forEach((val,xpos) => {
-          if (val) {
-            ctx.fillStyle="cyan";
-            ctx.fillRect(xpos*BLOCK,ypos*BLOCK,BLOCK,BLOCK);
-          }
-        })
-      );
-      current.forEach((row,dy) =>
-        row.forEach((val,dx) => {
-          if (val) {
-            ctx.fillStyle="yellow";
-            ctx.fillRect((x+dx)*BLOCK,(y+dy)*BLOCK,BLOCK,BLOCK);
-          }
-        })
-      );
-    }
+// --- Collision ---
+function validMove(p){
+  return p.shape.every((row,dy)=>
+    row.every((val,dx)=>
+      !val || (
+        p.y+dy>=0 &&
+        p.y+dy<ROWS &&
+        p.x+dx>=0 &&
+        p.x+dx<COLS &&
+        !board[p.y+dy][p.x+dx]
+      )
+    )
+  );
+}
 
-    function move(dir) {
-      x+=dir;
-      if (collide()) x-=dir;
-      draw();
-    }
+// --- Actions ---
+function drop(){
+  piece.y++;
+  if(!validMove(piece)){
+    piece.y--;
+    merge();
+    piece=newPiece();
+    holdUsed=false;
+    if(!validMove(piece)) { alert("Game Over"); reset(); }
+  }
+  dropStart=Date.now();
+}
+function merge(){
+  piece.shape.forEach((row,dy)=>
+    row.forEach((val,dx)=>{
+      if(val) board[piece.y+dy][piece.x+dx]=piece.type;
+    })
+  );
+  clearLines();
+}
+function clearLines(){
+  let lines=0;
+  board=board.filter(row=>{
+    if(row.every(cell=>cell)){ lines++; return false; }
+    return true;
+  });
+  while(board.length<ROWS) board.unshift(Array(COLS).fill(""));
+  score+=lines*100;
+  document.getElementById("score").textContent=score;
+}
+function rotate(dir){
+  const newShape = piece.shape[0].map((_,i)=>
+    piece.shape.map(row=>row[i])
+  );
+  if(dir<0) newShape.reverse(); else newShape.forEach(r=>r.reverse());
+  const test={...piece,shape:newShape};
+  if(validMove(test)) piece=test;
+}
+function hardDrop(){
+  while(validMove({...piece,y:piece.y+1})) piece.y++;
+  drop();
+}
+function holdPiece(){
+  if(holdUsed) return;
+  if(holdPieceData){
+    [piece,holdPieceData] = [{...newPiece(),type:holdPieceData},piece.type];
+  } else {
+    holdPieceData=piece.type;
+    piece=newPiece();
+  }
+  holdUsed=true;
+  drawHold();
+}
+function togglePause(){ paused=!paused; }
 
-    function rotate() {
-      const rotated=current[0].map((_,i)=>current.map(r=>r[i])).reverse();
-      const save=current;
-      current=rotated;
-      if (collide()) current=save;
-      draw();
-    }
+// --- Game Loop ---
+function update(){
+  if(!paused && Date.now()-dropStart>dropInterval) drop();
+  drawBoard();
+  let ghost={...piece,y:piece.y};
+  while(validMove({...ghost,y:ghost.y+1})) ghost.y++;
+  drawPiece(ghost,true);
+  drawPiece(piece);
+  drawNext();
+  drawHold();
+  requestAnimationFrame(update);
+}
+function reset(){
+  board=Array.from({length:ROWS},()=>Array(COLS).fill(""));
+  newBag();
+  nextPiece=next();
+  piece=newPiece();
+  score=0;
+  document.getElementById("score").textContent=0;
+}
+reset();
+update();
 
-    function drop() {
-      y++;
-      if (collide()) {
-        y--;
-        merge();
-        clearLines();
-        newPiece();
-      }
-      draw();
-    }
-
-    function holdPiece() {
-      if (!canHold) return;
-      if (hold) {
-        [hold,current] = [current,hold];
-      } else {
-        hold=current;
-        newPiece();
-      }
-      x=3;y=0;canHold=false;
-      document.getElementById("hold").textContent="あり";
-      draw();
-    }
-
-    function togglePause() {
-      paused=!paused;
-    }
-
-    // ゲームループ
-    function update() {
-      if (!paused) {
-        drop();
-      }
-      draw();
-    }
-
-    // 初期化
-    newPiece();
-    setInterval(update, 500);
-  </script>
+// --- Touch Controls ---
+let startX,startY;
+canvas.addEventListener("touchstart",e=>{
+  startX=e.touches[0].clientX;
+  startY=e.touches[0].clientY;
+},{passive:true});
+canvas.addEventListener("touchend",e=>{
+  let dx=e.changedTouches[0].clientX-startX;
+  let dy=e.changedTouches[0].clientY-startY;
+  if(Math.abs(dx)>Math.abs(dy)){
+    if(dx>30) piece.x++, validMove(piece)||(piece.x--);
+    else if(dx<-30) piece.x--, validMove(piece)||(piece.x++);
+  } else {
+    if(dy>30) piece.y++, validMove(piece)||(piece.y--); // soft drop
+    else if(dy<-30) rotate(1); // swipe up = rotate
+  }
+});
+</script>
 </body>
 </html>
-
