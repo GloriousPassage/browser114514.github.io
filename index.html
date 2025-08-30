@@ -2,242 +2,292 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>テトリス</title>
 <style>
-  body { background:#111; color:white; font-family:sans-serif; text-align:center; margin:0; }
-  canvas { background:#000; display:block; margin:10px auto; }
-  #ui { display:flex; justify-content:space-around; margin-top:5px; }
-  .panel { text-align:left; }
+  body { background:#000; color:#fff; text-align:center; margin:0; font-family:sans-serif; }
+  #game { border:2px solid #fff; background:#111; }
+  .panel { display:inline-block; vertical-align:top; margin:5px; }
+  canvas { background:#111; }
 </style>
 </head>
 <body>
-<h2>テトリス</h2>
-<canvas id="board" width="300" height="600"></canvas>
-<div id="ui">
+  <h1>テトリス</h1>
   <div class="panel">
+    <canvas id="game" width="200" height="400"></canvas>
+  </div>
+  <div class="panel">
+    <p>ネクスト</p>
+    <canvas id="next" width="80" height="80"></canvas>
+    <p>ホールド</p>
+    <canvas id="hold" width="80" height="80"></canvas>
     <p>スコア: <span id="score">0</span></p>
     <p>レベル: <span id="level">1</span></p>
   </div>
-  <div class="panel">
-    <p>Next:</p>
-    <canvas id="next" width="100" height="100"></canvas>
-  </div>
-  <div class="panel">
-    <p>Hold:</p>
-    <canvas id="hold" width="100" height="100"></canvas>
-  </div>
-</div>
 
 <script>
-const COLS=10, ROWS=20, BLOCK=30;
-const canvas=document.getElementById("board"), ctx=canvas.getContext("2d");
-const nextCanvas=document.getElementById("next"), nctx=nextCanvas.getContext("2d");
-const holdCanvas=document.getElementById("hold"), hctx=holdCanvas.getContext("2d");
+const COLS = 10, ROWS = 20, BLOCK = 20;
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const nextCanvas = document.getElementById("next").getContext("2d");
+const holdCanvas = document.getElementById("hold").getContext("2d");
 
-const colors=["cyan","blue","orange","yellow","green","purple","red"];
-const shapes=[
-  [[1,1,1,1]], // I
-  [[2,0,0],[2,2,2]], // J
-  [[0,0,3],[3,3,3]], // L
-  [[4,4],[4,4]],     // O
-  [[0,5,5],[5,5,0]], // S
-  [[0,6,0],[6,6,6]], // T
-  [[7,7,0],[0,7,7]]  // Z
-];
-
-let board, currentPiece, nextQueue=[], holdPiece=null, holdUsed=false;
+let board = Array.from({length:ROWS},()=>Array(COLS).fill(null));
+let pieces = "IJLOSTZ";
+let colors = { I:"cyan", J:"blue", L:"orange", O:"yellow", S:"lime", T:"purple", Z:"red" };
+let bag = [];
+let currentPiece, nextPiece, holdPiece=null, holdUsed=false;
 let score=0, level=1, lines=0;
-let dropStart=Date.now(), dropInterval=1000;
+let dropInterval=1000, lastTime=0, dropCounter=0;
 
-// 7種一巡
-function generateBag(){
-  let bag=[0,1,2,3,4,5,6];
+// ミノの形
+const SHAPES = {
+  I:[[1,1,1,1]],
+  J:[[1,0,0],[1,1,1]],
+  L:[[0,0,1],[1,1,1]],
+  O:[[1,1],[1,1]],
+  S:[[0,1,1],[1,1,0]],
+  T:[[0,1,0],[1,1,1]],
+  Z:[[1,1,0],[0,1,1]]
+};
+
+// ==== Pieceクラス ====
+class Piece {
+  constructor(type) {
+    this.type = type;
+    this.matrix = SHAPES[type].map(r=>[...r]);
+    this.pos = {x:3, y:0};
+  }
+}
+
+// ==== ゲーム制御 ====
+function resetBag(){
+  bag = pieces.split('');
   for(let i=bag.length-1;i>0;i--){
     const j=Math.floor(Math.random()*(i+1));
     [bag[i],bag[j]]=[bag[j],bag[i]];
   }
-  nextQueue.push(...bag);
 }
-function Piece(type){
-  this.type=type;
-  this.shape=shapes[type].map(r=>[...r]);
-  this.x=3;
-  this.y=0;
+function getNextPiece(){
+  if(bag.length===0) resetBag();
+  return new Piece(bag.pop());
 }
-function newPiece(){
-  if(nextQueue.length<7) generateBag();
-  return new Piece(nextQueue.shift());
-}
-function resetBoard(){
-  board=Array.from({length:ROWS},()=>Array(COLS).fill(0));
-}
-function drawBlock(ctx,x,y,val){
-  ctx.fillStyle=colors[val-1];
-  ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
-  ctx.strokeStyle="#111";
-  ctx.strokeRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
-}
-function drawBoard(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  for(let y=0;y<ROWS;y++){
-    for(let x=0;x<COLS;x++){
-      if(board[y][x]) drawBlock(ctx,x,y,board[y][x]);
-    }
-  }
-  drawPiece(currentPiece,ctx);
-  drawGhost();
-}
-function drawPiece(p,context){
-  for(let y=0;y<p.shape.length;y++){
-    for(let x=0;x<p.shape[y].length;x++){
-      if(p.shape[y][x]) drawBlock(context,p.x+x,p.y+y,p.shape[y][x]);
-    }
+function spawnPiece(){
+  currentPiece = nextPiece || getNextPiece();
+  nextPiece = getNextPiece();
+  holdUsed=false;
+  if(collide(board,currentPiece)) {
+    alert("Game Over!");
+    board = Array.from({length:ROWS},()=>Array(COLS).fill(null));
+    score=0; level=1; lines=0;
   }
 }
-function drawGhost(){
-  let ghost=JSON.parse(JSON.stringify(currentPiece));
-  while(!collide(ghost)) ghost.y++;
-  ghost.y--;
-  for(let y=0;y<ghost.shape.length;y++){
-    for(let x=0;x<ghost.shape[y].length;x++){
-      if(ghost.shape[y][x]){
-        ctx.globalAlpha=0.3;
-        drawBlock(ctx,ghost.x+x,ghost.y+y,ghost.shape[y][x]);
-        ctx.globalAlpha=1.0;
-      }
-    }
-  }
-}
-function collide(p){
-  for(let y=0;y<p.shape.length;y++){
-    for(let x=0;x<p.shape[y].length;x++){
-      if(p.shape[y][x]){
-        let nx=p.x+x, ny=p.y+y;
-        if(nx<0||nx>=COLS||ny>=ROWS) return true;
-        if(ny>=0&&board[ny][nx]) return true;
+
+// ==== 判定 ====
+function collide(board,piece){
+  for(let y=0;y<piece.matrix.length;y++){
+    for(let x=0;x<piece.matrix[y].length;x++){
+      if(piece.matrix[y][x]){
+        let ny=piece.pos.y+y, nx=piece.pos.x+x;
+        if(ny>=ROWS || nx<0 || nx>=COLS || (ny>=0 && board[ny][nx])) return true;
       }
     }
   }
   return false;
 }
-function merge(p){
-  for(let y=0;y<p.shape.length;y++){
-    for(let x=0;x<p.shape[y].length;x++){
-      if(p.shape[y][x]){
-        board[p.y+y][p.x+x]=p.shape[y][x];
-      }
-    }
-  }
+
+// ==== 固定処理 ====
+function merge(board,piece){
+  piece.matrix.forEach((row,y)=>{
+    row.forEach((val,x)=>{
+      if(val) board[piece.pos.y+y][piece.pos.x+x]=piece.type;
+    });
+  });
 }
+
+// ==== 行消し ====
 function clearLines(){
   let cleared=0;
   outer: for(let y=ROWS-1;y>=0;y--){
-    if(board[y].every(v=>v>0)){
+    if(board[y].every(v=>v)){
       board.splice(y,1);
-      board.unshift(Array(COLS).fill(0));
+      board.unshift(Array(COLS).fill(null));
       cleared++;
       y++;
     }
   }
-  if(cleared>0){
+  if(cleared){
     lines+=cleared;
+    // スコア計算
     let add=0;
-    const allClear=board.every(row=>row.every(v=>v===0));
-    if(cleared===1) add=allClear?900:100;
-    if(cleared===2) add=allClear?1500:300;
-    if(cleared===3) add=allClear?2300:500;
-    if(cleared===4) add=allClear?2800:800;
+    if(cleared===1) add=100;
+    if(cleared===2) add=300;
+    if(cleared===3) add=500;
+    if(cleared===4) add=800;
     score+=add;
-    if(lines>=level*10){ level++; dropInterval=Math.max(100,dropInterval-100);}
+    // レベルアップ
+    level = 1 + Math.floor(lines/10);
+    dropInterval = Math.max(200, 1000 - (level-1)*100);
   }
 }
-function rotate(p,dir){
-  const N=p.shape.length;
-  let m=p.shape.map((r,i)=>r.map((_,j)=>p.shape[N-1-j][i]));
-  if(dir<0) m=m.map((r,i)=>r.map((_,j)=>p.shape[j][N-1-i]));
-  let test=new Piece(p.type);
-  test.shape=m; test.x=p.x; test.y=p.y;
-  if(!collide(test)) p.shape=m;
+
+// ==== 回転 ====
+function rotate(matrix,dir){
+  const N=matrix.length;
+  let res=Array.from({length:N},()=>Array(N).fill(0));
+  for(let y=0;y<N;y++){
+    for(let x=0;x<N;x++){
+      res[x][N-1-y] = dir>0 ? matrix[y][x] : matrix[N-1-x][y];
+    }
+  }
+  return res;
 }
+function rotatePiece(piece,dir){
+  let m = rotate(piece.matrix,dir);
+  let save = piece.matrix;
+  piece.matrix = m;
+  if(collide(board,piece)) piece.matrix=save;
+}
+
+// ==== 描画 ====
+function drawBoard(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for(let y=0;y<ROWS;y++){
+    for(let x=0;x<COLS;x++){
+      if(board[y][x]){
+        ctx.fillStyle = colors[board[y][x]];
+        ctx.fillRect(x*BLOCK,y*BLOCK,BLOCK,BLOCK);
+      }
+    }
+  }
+}
+function drawPiece(piece,ghost=false){
+  ctx.globalAlpha=ghost?0.3:1.0;
+  piece.matrix.forEach((row,y)=>{
+    row.forEach((val,x)=>{
+      if(val){
+        ctx.fillStyle=colors[piece.type];
+        ctx.fillRect((piece.pos.x+x)*BLOCK,(piece.pos.y+y)*BLOCK,BLOCK,BLOCK);
+      }
+    });
+  });
+  ctx.globalAlpha=1.0;
+}
+function drawNext(){
+  nextCanvas.clearRect(0,0,80,80);
+  nextPiece.matrix.forEach((row,y)=>{
+    row.forEach((val,x)=>{
+      if(val){
+        nextCanvas.fillStyle=colors[nextPiece.type];
+        nextCanvas.fillRect(x*20,y*20,20,20);
+      }
+    });
+  });
+}
+function drawHold(){
+  holdCanvas.clearRect(0,0,80,80);
+  if(holdPiece){
+    holdPiece.matrix.forEach((row,y)=>{
+      row.forEach((val,x)=>{
+        if(val){
+          holdCanvas.fillStyle=colors[holdPiece.type];
+          holdCanvas.fillRect(x*20,y*20,20,20);
+        }
+      });
+    });
+  }
+}
+
+// ==== ゴースト ====
+function getGhost(piece){
+  let ghost = new Piece(piece.type);
+  ghost.matrix = piece.matrix.map(r=>[...r]);
+  ghost.pos={x:piece.pos.x,y:piece.pos.y};
+  while(!collide(board,ghost)) ghost.pos.y++;
+  ghost.pos.y--;
+  return ghost;
+}
+
+// ==== メインループ ====
+function update(time=0){
+  const delta = time - lastTime;
+  lastTime=time;
+  dropCounter+=delta;
+  if(dropCounter>dropInterval){
+    currentPiece.pos.y++;
+    if(collide(board,currentPiece)){
+      currentPiece.pos.y--;
+      merge(board,currentPiece);
+      clearLines();
+      spawnPiece();
+    }
+    dropCounter=0;
+  }
+
+  drawBoard();
+  drawPiece(getGhost(currentPiece),true);
+  drawPiece(currentPiece);
+  drawNext();
+  drawHold();
+  document.getElementById("score").textContent=score;
+  document.getElementById("level").textContent=level;
+
+  requestAnimationFrame(update);
+}
+
+// ==== ホールド ====
 function hold(){
   if(holdUsed) return;
   if(!holdPiece){
-    holdPiece=new Piece(currentPiece.type);
-    currentPiece=newPiece();
-  }else{
-    let tmp=new Piece(currentPiece.type);
-    currentPiece=new Piece(holdPiece.type);
-    holdPiece=tmp;
+    holdPiece = new Piece(currentPiece.type);
+    currentPiece = nextPiece;
+    nextPiece = getNextPiece();
+  } else {
+    let tmp = holdPiece;
+    holdPiece = new Piece(currentPiece.type);
+    currentPiece = tmp;
+    currentPiece.pos={x:3,y:0};
   }
-  currentPiece.x=3; currentPiece.y=0;
   holdUsed=true;
 }
-function drawNext(){
-  nctx.clearRect(0,0,nextCanvas.width,nextCanvas.height);
-  let next=new Piece(nextQueue[0]);
-  next.x=1; next.y=1;
-  drawPiece(next,nctx);
-}
-function drawHold(){
-  hctx.clearRect(0,0,holdCanvas.width,holdCanvas.height);
-  if(holdPiece){
-    let hp=new Piece(holdPiece.type);
-    hp.x=1; hp.y=1;
-    drawPiece(hp,hctx);
-  }
-}
-function drop(){
-  currentPiece.y++;
-  if(collide(currentPiece)){
-    currentPiece.y--;
-    merge(currentPiece);
-    clearLines();
-    currentPiece=newPiece();
-    holdUsed=false;
-    if(collide(currentPiece)){ resetBoard(); score=0; level=1; lines=0; }
-  }
-  dropStart=Date.now();
-}
-function update(){
-  if(Date.now()-dropStart>dropInterval) drop();
-  drawBoard();
-  drawNext();
-  drawHold();
-  document.getElementById("score").innerText=score;
-  document.getElementById("level").innerText=level;
-  requestAnimationFrame(update);
-}
-resetBoard(); generateBag(); currentPiece=newPiece(); update();
 
-// タッチ操作
-let startX,startY,startTime;
+// ==== スワイプ & 操作 ====
+let touchStartX=0, touchStartY=0, touchStartTime=0;
 canvas.addEventListener("touchstart",e=>{
-  startX=e.touches[0].clientX;
-  startY=e.touches[0].clientY;
-  startTime=Date.now();
+  touchStartX=e.touches[0].clientX;
+  touchStartY=e.touches[0].clientY;
+  touchStartTime=Date.now();
 });
 canvas.addEventListener("touchend",e=>{
-  let dx=e.changedTouches[0].clientX-startX;
-  let dy=e.changedTouches[0].clientY-startY;
-  let dt=Date.now()-startTime;
+  let dx = e.changedTouches[0].clientX - touchStartX;
+  let dy = e.changedTouches[0].clientY - touchStartY;
+  let dt = Date.now()-touchStartTime;
+
   if(Math.abs(dx)>Math.abs(dy)){
-    if(dx>30) currentPiece.x++;
-    else if(dx<-30) currentPiece.x--;
-    if(collide(currentPiece)) currentPiece.x-=Math.sign(dx);
-  }else{
-    if(dy<-30) rotate(currentPiece,1); // 上スワイプ右回転
-    else if(dy>30) rotate(currentPiece,-1); // 下スワイプ左回転
+    if(dx>30) currentPiece.pos.x++;
+    else if(dx<-30) currentPiece.pos.x--;
+    if(collide(board,currentPiece)){
+      if(dx>0) currentPiece.pos.x--;
+      else currentPiece.pos.x++;
+    }
+  } else {
+    if(dy<-30) rotatePiece(currentPiece,1); // 上スワイプ右回転
+    else if(dy>30) rotatePiece(currentPiece,-1); // 下スワイプ左回転
   }
-  if(dt>500){ currentPiece.y++; drop(); } // 長押しソフトドロップ
-  else if(Math.abs(dx)<10&&Math.abs(dy)<10){ // タップ → ハードドロップ
-    while(!collide(currentPiece)) currentPiece.y++;
-    currentPiece.y--;
-    merge(currentPiece);
-    clearLines();
-    currentPiece=newPiece();
-    holdUsed=false;
+  if(dt>500){ // 長押し
+    currentPiece.pos.y++;
+    while(!collide(board,currentPiece)) currentPiece.pos.y++;
+    currentPiece.pos.y--;
   }
 });
+document.addEventListener("keydown",e=>{
+  if(e.key==="c") hold();
+});
+
+// ==== ゲーム開始 ====
+resetBag();
+spawnPiece();
+update();
 </script>
 </body>
 </html>
