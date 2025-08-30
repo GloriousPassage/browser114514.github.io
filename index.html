@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>テトリス</title>
+<title>テトリス 修正版</title>
 <style>
 body { margin:0; background:#000; color:#fff; font-family:sans-serif; text-align:center; }
-canvas { background:#111; display:block; margin:10px auto; }
+canvas { background:#111; display:block; margin:10px auto; width:70vw; height:auto; }
 #ui { display:flex; justify-content:space-around; margin-top:5px; }
 .panel { text-align:left; }
 button { margin:2px; }
@@ -55,8 +55,8 @@ let board=[], currentPiece, nextQueue=[], nextPiece, holdPiece=null, holdUsed=fa
 let score=0, level=1, lines=0, dropInterval=1000, dropCounter=0, lastTime=0;
 let paused=false;
 
-// ===== 初期化 =====
-function resetBoard(){ board=Array.from({length:ROWS},()=>Array(COLS).fill(0)); }
+function resetBoard(){ board=Array.from({length:ROWS},()=>Array(COLS).fill(null)); }
+
 function generateBag(){
   let bag=Object.keys(shapes);
   for(let i=bag.length-1;i>0;i--){
@@ -65,6 +65,7 @@ function generateBag(){
   }
   nextQueue.push(...bag);
 }
+
 class Piece{
   constructor(type){
     this.type=type;
@@ -72,10 +73,14 @@ class Piece{
     this.x=3; this.y=0;
   }
 }
+
+// 次のピース生成
 function newPiece(){
   if(nextQueue.length<7) generateBag();
   return new Piece(nextQueue.shift());
 }
+
+// ピース生成
 function spawnPiece(){
   currentPiece=nextPiece || newPiece();
   nextPiece=newPiece();
@@ -83,7 +88,7 @@ function spawnPiece(){
   if(collide(currentPiece)) resetBoard();
 }
 
-// ===== 衝突判定 =====
+// 衝突判定
 function collide(p){
   for(let y=0;y<p.shape.length;y++){
     for(let x=0;x<p.shape[y].length;x++){
@@ -97,24 +102,25 @@ function collide(p){
   return false;
 }
 
-// ===== 固定・消去 =====
+// 固定・消去
 function merge(p){
   for(let y=0;y<p.shape.length;y++)
     for(let x=0;x<p.shape[y].length;x++)
-      if(p.shape[y][x]) board[p.y+y][p.x+x]=p.shape[y][x];
+      if(p.shape[y][x]) board[p.y+y][p.x+x]=p.type;
 }
+
 function clearLines(){
   let cleared=0;
   for(let y=ROWS-1;y>=0;y--){
-    if(board[y].every(v=>v>0)){
+    if(board[y].every(v=>v!==null)){
       board.splice(y,1);
-      board.unshift(Array(COLS).fill(0));
+      board.unshift(Array(COLS).fill(null));
       cleared++; y++;
     }
   }
   if(cleared){
     lines+=cleared;
-    let allClear=board.every(row=>row.every(v=>v===0));
+    let allClear=board.every(row=>row.every(v=>v===null));
     let add=0;
     if(cleared===1) add=allClear?900:100;
     else if(cleared===2) add=allClear?1500:300;
@@ -125,16 +131,19 @@ function clearLines(){
   }
 }
 
-// ===== 回転 =====
+// 回転
 function rotate(p,dir){
-  const N=p.shape.length;
+  let N=p.shape.length;
   let m=p.shape.map((r,i)=>r.map((_,j)=>p.shape[N-1-j][i]));
-  if(dir<0) m=m.map((r,i)=>r.map((_,j)=>p.shape[j][N-1-i]));
+  if(dir<0){ m=m.map((r,i)=>r.map((_,j)=>p.shape[j][N-1-i])); }
   let test=new Piece(p.type); test.shape=m; test.x=p.x; test.y=p.y;
+  // 壁衝突補正
+  let offset=0;
+  while(collide(test) && offset<3){ test.x+=offset%2===0?offset:-offset; offset++; }
   if(!collide(test)) p.shape=m;
 }
 
-// ===== ホールド =====
+// ホールド
 function hold(){
   if(holdUsed) return;
   if(!holdPiece){
@@ -149,7 +158,7 @@ function hold(){
   holdUsed=true;
 }
 
-// ===== 描画 =====
+// 描画
 function drawBoard(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   for(let y=0;y<ROWS;y++)
@@ -162,10 +171,7 @@ function drawPiece(p,ghost){
   ctx.globalAlpha=ghost?0.3:1.0;
   for(let y=0;y<p.shape.length;y++)
     for(let x=0;x<p.shape[y].length;x++)
-      if(p.shape[y][x]){
-        ctx.fillStyle=colors[p.type];
-        ctx.fillRect((p.x+x)*BLOCK,(p.y+y)*BLOCK,BLOCK,BLOCK);
-      }
+      if(p.shape[y][x]){ ctx.fillStyle=colors[p.type]; ctx.fillRect((p.x+x)*BLOCK,(p.y+y)*BLOCK,BLOCK,BLOCK); }
   ctx.globalAlpha=1.0;
 }
 function getGhost(p){
@@ -175,6 +181,7 @@ function getGhost(p){
   ghost.y--;
   return ghost;
 }
+
 function drawNext(){
   nextCtx.clearRect(0,0,100,100);
   if(nextPiece){ let n=new Piece(nextPiece.type); n.x=1; n.y=1;
@@ -190,7 +197,7 @@ function drawHold(){
         if(h.shape[y][x]){ holdCtx.fillStyle=colors[h.type]; holdCtx.fillRect(x*20,y*20,20,20); } }
 }
 
-// ===== 落下 =====
+// 落下
 function drop(){
   currentPiece.y++;
   if(collide(currentPiece)){
@@ -201,7 +208,7 @@ function drop(){
   }
 }
 
-// ===== ゲームループ =====
+// ゲームループ
 function update(time=0){
   if(!paused){
     const delta=time-lastTime;
@@ -215,7 +222,7 @@ function update(time=0){
   requestAnimationFrame(update);
 }
 
-// ===== 入力 =====
+// 入力
 let startX=0,startY=0,startTime=0;
 canvas.addEventListener("touchstart",e=>{ startX=e.touches[0].clientX; startY=e.touches[0].clientY; startTime=Date.now(); });
 canvas.addEventListener("touchend",e=>{
@@ -232,7 +239,7 @@ canvas.addEventListener("touchend",e=>{
 pauseBtn.addEventListener("click",()=>{ paused=!paused; });
 holdBtn.addEventListener("click",()=>{ hold(); });
 
-// ===== 初期化 =====
+// 初期化
 resetBoard(); generateBag(); nextPiece=newPiece(); spawnPiece(); update();
 </script>
 </body>
