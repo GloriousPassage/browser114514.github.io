@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-<link rel="manifest" href="./manifest.json">
 <meta charset="UTF-8">
 <title>テトリス</title>
 <style>
@@ -30,13 +29,6 @@
 </div>
 
 <script>
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js').then(registration => {
-      console.log('ServiceWorker registration successful.');
-    }).catch(err => {
-      console.log('ServiceWorker registration failed.');
-    });
-  }
 const COLS=10, ROWS=20, BLOCK=30;
 const canvas=document.getElementById("board"), ctx=canvas.getContext("2d");
 const nextCanvas=document.getElementById("next"), nctx=nextCanvas.getContext("2d");
